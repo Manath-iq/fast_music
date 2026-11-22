@@ -1,0 +1,21 @@
+name: macOS build
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test
+        run: swift test
+      - name: Build native app
+        run: bash scripts/build.sh
+      - name: Archive app
+        run: ditto -c -k --sequesterRsrc --keepParent "dist/Fast Music.app" dist/Fast-Music.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Fast-Music-macOS
+          path: dist/Fast-Music.zip
