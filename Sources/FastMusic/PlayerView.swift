@@ -42,21 +42,23 @@ struct TactileStyle: ButtonStyle {
 
 struct PlayerView: View {
     @ObservedObject var store: MusicStore
+    var previewSettings = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @FocusState private var searchFocused: Bool
     @State private var scrub: Double?
     @State private var confirmLogout = false
+    @State private var settings = false
 
     var body: some View {
         VStack(spacing: 0) {
-            header.padding(.bottom, 20)
-            tabs.padding(.bottom, 24)
+            header.padding(.bottom, 12)
+            tabs.padding(.bottom, 18)
             nowPlaying
-            transport.padding(.top, 16).padding(.bottom, 12)
+            transport.padding(.top, 12).padding(.bottom, 6)
             timeline
-            volume.padding(.top, 6)
-            divider.padding(.top, 14).padding(.bottom, 14)
+            volume.padding(.top, 2)
+            divider.padding(.top, 10).padding(.bottom, 12)
             shortcuts
             if let error = store.error {
                 HStack(alignment: .top, spacing: 10) {
@@ -66,9 +68,15 @@ struct PlayerView: View {
                     Button { store.error = nil } label: { Image(systemName: "xmark").frame(width: 22, height: 22) }.help("Скрыть сообщение")
                 }.padding(12).background(Theme.surface, in: RoundedRectangle(cornerRadius: 10)).padding(.top, 14)
             }
-            if store.demo {
+            if previewSettings {
+                divider.padding(.vertical, 14)
+                PreferencesView()
+            } else if store.demo {
                 Text("ПРЕДПРОСМОТР ДИЗАЙНА · БЕЗ ВОСПРОИЗВЕДЕНИЯ")
                     .font(.system(size: 9, weight: .medium)).tracking(1).foregroundStyle(Theme.muted).padding(.top, 16)
+            } else if settings {
+                divider.padding(.vertical, 14)
+                PreferencesView()
             } else if !store.signedIn {
                 divider.padding(.vertical, 16)
                 loginPanel
@@ -77,14 +85,13 @@ struct PlayerView: View {
                 libraryPanel
             }
         }
-        .padding(20)
-        .frame(width: 480)
+        .padding(16)
+        .frame(width: 392)
         .foregroundStyle(Theme.text)
         .background {
             ZStack {
                 if !reduceTransparency { Rectangle().fill(.ultraThinMaterial) }
                 Theme.background.opacity(reduceTransparency ? 1 : 0.94)
-                LinearGradient(colors: [.white.opacity(0.035), .clear, .clear], startPoint: .topLeading, endPoint: .bottomTrailing)
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 18))
@@ -92,6 +99,12 @@ struct PlayerView: View {
         .buttonStyle(TactileStyle())
         .preferredColorScheme(.dark)
         .tint(Theme.yellow)
+        .onReceive(NotificationCenter.default.publisher(for: .fastMusicFocusSearch)) { _ in
+            settings = false
+            store.navigate(.search)
+            searchFocused = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .fastMusicPanelOpened)) { _ in searchFocused = false }
         .confirmationDialog("Выйти из Яндекса?", isPresented: $confirmLogout) {
             Button("Выйти", role: .destructive) { store.signOut() }
         } message: { Text("Токен будет удалён из Связки ключей. Для следующего входа потребуется новый код.") }
@@ -99,10 +112,6 @@ struct PlayerView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            Burst().fill(Theme.yellow).frame(width: 30, height: 30)
-            (Text("Яндекс ").fontWeight(.medium) + Text("Музыка").fontWeight(.bold).foregroundColor(Theme.yellow))
-                .font(.system(size: 18)).fixedSize()
-            Spacer(minLength: 2)
             HStack(spacing: 7) {
                 Image(systemName: "magnifyingglass").font(.system(size: 14)).foregroundStyle(Theme.muted)
                 TextField("Найти музыку", text: $store.query)
@@ -112,12 +121,14 @@ struct PlayerView: View {
                     .accessibilityLabel("Поиск музыки")
                 if !store.query.isEmpty {
                     Button { store.query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.muted) }.help("Очистить поиск")
-                }
+                } else { Text("⌘F").font(.system(size: 10)).foregroundStyle(Theme.muted).accessibilityHidden(true) }
             }
             .padding(.horizontal, 11).frame(height: 32)
             .background(.white.opacity(0.065), in: Capsule())
             .overlay(Capsule().strokeBorder(searchFocused ? Theme.yellow.opacity(0.8) : .clear, lineWidth: 1))
             Menu {
+                Button(settings ? "Закрыть настройки" : "Настройки…") { settings.toggle(); searchFocused = false }
+                Divider()
                 if store.signedIn {
                     Text(store.accountName)
                     Button("Выйти из Яндекса…") { confirmLogout = true }
@@ -145,21 +156,21 @@ struct PlayerView: View {
     private func tab(_ title: String, icon: String?, section: MusicStore.Section) -> some View {
         let active = store.section == section || (section == .collection && store.section == .favorites)
         return Button {
+            settings = false
             store.navigate(section)
             if section == .search { searchFocused = true }
         } label: {
             HStack(spacing: 8) {
                 if let icon { Image(systemName: icon).font(.system(size: 17, weight: .regular)) }
                 else { Burst().fill(active ? Theme.yellow : Theme.muted).frame(width: 23, height: 23) }
-                Text(title).font(.system(size: 13, weight: active ? .semibold : .medium))
+                Text(title).font(.system(size: 12, weight: active ? .semibold : .medium))
             }
             .foregroundStyle(active ? Theme.text : Theme.muted)
-            .frame(maxWidth: .infinity).frame(height: 34)
+            .frame(maxWidth: .infinity).frame(height: 32)
             .background {
                 if active {
-                    Capsule().fill(LinearGradient(colors: [Theme.yellow.opacity(0.17), Theme.yellow.opacity(0.045)], startPoint: .top, endPoint: .bottom))
+                    Capsule().fill(Theme.yellow.opacity(0.08))
                     Capsule().strokeBorder(Theme.yellow, lineWidth: 1)
-                        .shadow(color: Theme.yellow.opacity(0.25), radius: 5)
                 }
             }
             .contentShape(Capsule())
@@ -169,26 +180,18 @@ struct PlayerView: View {
     }
 
     private var nowPlaying: some View {
-        HStack(spacing: 16) {
-            CoverArt(uri: store.current?.cover, size: 88, demo: store.demo)
+        HStack(spacing: 12) {
+            CoverArt(uri: store.current?.cover, size: 64, demo: store.demo)
             VStack(alignment: .leading, spacing: 6) {
                 Text(store.current?.title ?? "Ваша музыка. Рядом.")
-                    .font(.system(size: 18, weight: .semibold)).lineLimit(2)
+                    .font(.system(size: 15, weight: .semibold)).lineLimit(2)
                     .help(store.current?.title ?? "Выберите трек или включите Мою волну")
                 Text(store.current?.artist ?? "Включите свою волну")
-                    .font(.system(size: 14)).foregroundStyle(Theme.muted).lineLimit(1)
+                    .font(.system(size: 12)).foregroundStyle(Theme.muted).lineLimit(1)
             }
             Spacer(minLength: 0)
         }
-        .frame(height: 88)
-        .background(alignment: .trailing) {
-            if store.current != nil {
-                if let glow = LocalArtwork.glow {
-                    Image(nsImage: glow).resizable().frame(width: 330, height: 170).opacity(0.75)
-                        .allowsHitTesting(false).accessibilityHidden(true)
-                }
-            }
-        }
+        .frame(height: 64)
     }
 
     private var transport: some View {
@@ -207,7 +210,7 @@ struct PlayerView: View {
                             .font(.system(size: 25, weight: .bold)).foregroundStyle(Theme.background)
                             .offset(x: store.playing ? 0 : 2)
                     }
-                }.frame(width: 56, height: 56)
+                }.frame(width: 48, height: 48)
             }
             .disabled(!store.signedIn && !store.demo)
             .help(store.playing ? "Пауза" : "Воспроизвести")
@@ -217,7 +220,7 @@ struct PlayerView: View {
             Spacer()
             iconButton(store.current.map { store.liked.contains($0.id) } == true ? "heart.fill" : "heart", label: "Любимый трек", active: store.current.map { store.liked.contains($0.id) } == true, background: true) { store.toggleLike() }
                 .disabled(store.current == nil || store.likeBusy)
-        }.padding(.horizontal, 16)
+        }.padding(.horizontal, 8)
     }
 
     private var timeline: some View {
@@ -225,7 +228,7 @@ struct PlayerView: View {
             Text(clock(scrub ?? store.position)).frame(width: 34, alignment: .leading)
             MusicSlider(value: Binding(get: { scrub ?? store.position }, set: { scrub = $0 }), range: 0...max(1, store.duration), color: Theme.yellow, label: "Позиция в треке") { editing in
                 if !editing, let value = scrub { store.seek(value); scrub = nil }
-            }.disabled(store.current == nil)
+            }.frame(height: 22).disabled(store.current == nil)
             Text(clock(store.duration)).frame(width: 34, alignment: .trailing)
         }.font(.system(size: 12)).monospacedDigit().foregroundStyle(Theme.muted)
     }
@@ -233,7 +236,7 @@ struct PlayerView: View {
     private var volume: some View {
         HStack(spacing: 12) {
             Image(systemName: "speaker.wave.1.fill").frame(width: 34, alignment: .leading)
-            MusicSlider(value: $store.volume, range: 0...1, color: Theme.text, label: "Громкость") { _ in }
+            MusicSlider(value: $store.volume, range: 0...1, color: Theme.text, label: "Громкость") { _ in }.frame(height: 22)
             Image(systemName: "speaker.wave.3.fill").frame(width: 34, alignment: .trailing)
         }.font(.system(size: 15)).foregroundStyle(Theme.muted)
     }
@@ -250,19 +253,20 @@ struct PlayerView: View {
     private func shortcut(_ title: String, icon: String?, section: MusicStore.Section) -> some View {
         let active = store.section == section
         return Button {
+            settings = false
             store.navigate(section)
             if section == .wave { store.startWave() }
         } label: {
             VStack(spacing: 7) {
                 if let icon {
-                    Image(systemName: icon).font(.system(size: 23, weight: .regular))
-                        .foregroundStyle(section == .favorites ? AnyShapeStyle(LinearGradient(colors: [Theme.text, .pink], startPoint: .topLeading, endPoint: .bottomTrailing)) : AnyShapeStyle(Theme.text))
-                        .frame(height: 29)
-                } else { Burst().fill(Theme.yellow).frame(width: 30, height: 29) }
-                Text(title).font(.system(size: 11.5, weight: .medium)).lineLimit(1)
+                    Image(systemName: icon).font(.system(size: 20, weight: .regular))
+                        .foregroundStyle(section == .favorites ? Theme.yellow : Theme.text)
+                        .frame(height: 24)
+                } else { Burst().fill(Theme.yellow).frame(width: 26, height: 24) }
+                Text(title).font(.system(size: 10, weight: .medium)).lineLimit(1)
             }
-            .frame(maxWidth: .infinity).frame(height: 70)
-            .background(LinearGradient(colors: [active ? Theme.yellow.opacity(0.10) : .white.opacity(0.065), .white.opacity(0.025)], startPoint: .topLeading, endPoint: .bottomTrailing), in: RoundedRectangle(cornerRadius: 13))
+            .frame(maxWidth: .infinity).frame(height: 60)
+            .background(active ? Theme.yellow.opacity(0.06) : .white.opacity(0.035), in: RoundedRectangle(cornerRadius: 13))
             .overlay(RoundedRectangle(cornerRadius: 13).strokeBorder(active ? Theme.yellow : .white.opacity(0.13), lineWidth: 1))
             .contentShape(RoundedRectangle(cornerRadius: 13))
         }.help(section == .recent ? "Недавние поиски" : title)
@@ -444,8 +448,12 @@ struct MusicSlider: NSViewRepresentable {
 final class SlimSliderCell: NSSliderCell {
     var tint = NSColor.yellow
     var onTracking: ((Bool) -> Void)?
+    private var trackBounds: NSRect {
+        let bounds = controlView?.bounds ?? .zero
+        return NSRect(x: bounds.minX + 6, y: bounds.midY - 1.5, width: max(0, bounds.width - 12), height: 3)
+    }
     override func drawBar(inside rect: NSRect, flipped: Bool) {
-        let bar = NSRect(x: rect.minX, y: rect.midY - 1.5, width: rect.width, height: 3)
+        let bar = trackBounds
         NSColor.white.withAlphaComponent(0.23).setFill()
         NSBezierPath(roundedRect: bar, xRadius: 1.5, yRadius: 1.5).fill()
         let fraction = (doubleValue - minValue) / max(1e-9, maxValue - minValue)
@@ -453,8 +461,9 @@ final class SlimSliderCell: NSSliderCell {
         NSBezierPath(roundedRect: NSRect(x: bar.minX, y: bar.minY, width: bar.width * fraction, height: 3), xRadius: 1.5, yRadius: 1.5).fill()
     }
     override func knobRect(flipped: Bool) -> NSRect {
-        let rect = super.knobRect(flipped: flipped)
-        return NSRect(x: rect.midX - 6, y: rect.midY - 6, width: 12, height: 12)
+        let bar = trackBounds
+        let fraction = min(1, max(0, (doubleValue - minValue) / max(1e-9, maxValue - minValue)))
+        return NSRect(x: bar.minX + bar.width * fraction - 5, y: bar.midY - 5, width: 10, height: 10)
     }
     override func drawKnob(_ knobRect: NSRect) {
         NSColor.black.withAlphaComponent(0.3).setFill()

@@ -207,6 +207,30 @@ final class MusicStore: ObservableObject {
         }
     }
 
+    func startFavorites() {
+        guard signedIn, !loadingAudio else {
+            if !signedIn { error = "Сначала войдите в Яндекс, чтобы включить любимые треки." }
+            return
+        }
+        contentTask?.cancel(); requestID = UUID(); busy = false
+        playTask?.cancel(); loadingAudio = true; error = nil
+        let id = UUID(); playbackID = id
+        playTask = Task {
+            do {
+                let ids = try await api.likedIDs(user: userID)
+                let selected = shuffle ? Array(ids.shuffled().prefix(100)) : Array(ids.prefix(100))
+                let favorites = try await api.tracks(ids: selected).filter(\.available)
+                try Task.checkCancellation()
+                guard id == playbackID else { return }
+                guard let first = favorites.first else { throw MusicError.message("В любимом пока нет доступных треков.") }
+                report("skip"); wave = nil; queue = favorites; index = 0
+                liked = Set(ids); favoriteIDs = selected; hasMoreFavorites = false; section = .favorites
+                tracks = favorites; catalog = []; detailTitle = nil
+                await prepare(first, id: id)
+            } catch { if !Task.isCancelled { self.error = error.localizedDescription; loadingAudio = false } }
+        }
+    }
+
     func play(_ track: Track, in list: [Track]) {
         guard track.available, signedIn else { return }
         if section == .search { rememberSearch() }

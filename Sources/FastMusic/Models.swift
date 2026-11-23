@@ -9,7 +9,7 @@ struct Track: Identifiable, Codable, Equatable, Sendable {
     let duration: Double
     let available: Bool
     var fullID: String { albumID.map { "\(id):\($0)" } ?? id }
-    var coverURL: URL? { ArtworkURL.make(cover, size: 240) }
+    var coverURL: URL? { ArtworkURL.make(cover, size: 200) }
 
     init?(json: [String: Any]) {
         guard let id = stringID(json["id"]), let title = json["title"] as? String else { return nil }
@@ -17,7 +17,7 @@ struct Track: Identifiable, Codable, Equatable, Sendable {
         self.title = title
         artist = (json["artists"] as? [[String: Any]] ?? []).compactMap { $0["name"] as? String }.joined(separator: ", ")
         albumID = (json["albums"] as? [[String: Any]])?.first.flatMap { stringID($0["id"]) }
-        cover = json["coverUri"] as? String
+        cover = json["coverUri"] as? String ?? (json["albums"] as? [[String: Any]])?.first?["coverUri"] as? String
         // Yandex returns milliseconds, including integer JSON numbers.
         duration = ((json["durationMs"] as? NSNumber)?.doubleValue ?? 0) / 1000
         available = json["available"] as? Bool ?? true
@@ -88,15 +88,20 @@ enum NetworkPolicy {
     }
     static func artwork(_ url: URL) -> Bool {
         guard url.scheme == "https", url.user == nil, url.password == nil, let host = url.host?.lowercased() else { return false }
-        return host == "avatars.yandex.net" || host == "avatars.mds.yandex.net"
+        return ["avatars.yandex.net", "avatars.mds.yandex.net", "avatars.mds.yandex.ru"].contains(host)
     }
 }
 
 enum ArtworkURL {
     static func make(_ uri: String?, size: Int) -> URL? {
         guard let uri, !uri.isEmpty else { return nil }
-        let address = uri.replacingOccurrences(of: "%%", with: "\(size)x\(size)")
-        guard let url = URL(string: address.hasPrefix("https://") ? address : "https://" + address), NetworkPolicy.artwork(url) else { return nil }
+        // Yandex serves named presets, not arbitrary dimensions (240x240 returns HTTP 404).
+        let preset = size <= 200 ? 200 : 400
+        var address = uri.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "%%", with: "\(preset)x\(preset)")
+        if address.hasPrefix("//") { address = "https:" + address }
+        else if address.hasPrefix("http://") { address = "https://" + address.dropFirst(7) }
+        else if !address.hasPrefix("https://") { address = "https://" + address }
+        guard let url = URL(string: address), NetworkPolicy.artwork(url) else { return nil }
         return url
     }
 }

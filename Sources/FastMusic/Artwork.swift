@@ -1,6 +1,15 @@
 import SwiftUI
 import ImageIO
 
+// Artwork has its own unauthenticated session. CDN redirects are allowed only between
+// known artwork hosts; account credentials can never enter this session.
+final class ArtworkRedirectPolicy: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
+        guard let url = request.url, NetworkPolicy.artwork(url) else { completionHandler(nil); return }
+        completionHandler(request)
+    }
+}
+
 enum LocalArtwork {
     static let glow: NSImage? = Bundle.main.path(forResource: "track-glow", ofType: "png").flatMap(NSImage.init(contentsOfFile:))
     static let previewCover: NSImage? = Bundle.main.path(forResource: "reference-cover", ofType: "png").flatMap(NSImage.init(contentsOfFile:))
@@ -16,7 +25,7 @@ final class ArtworkCache {
         cache.countLimit = 80
         let config = URLSessionConfiguration.ephemeral
         config.urlCache = nil; config.timeoutIntervalForRequest = 15
-        session = URLSession(configuration: config, delegate: RedirectPolicy(), delegateQueue: nil)
+        session = URLSession(configuration: config, delegate: ArtworkRedirectPolicy(), delegateQueue: nil)
     }
     func image(_ url: URL) async -> NSImage? {
         guard NetworkPolicy.artwork(url) else { return nil }
@@ -65,7 +74,7 @@ struct CoverArt: View {
         .accessibilityHidden(true)
         .task(id: uri) {
             image = nil
-            guard let url = ArtworkURL.make(uri, size: 240) else { return }
+            guard let url = ArtworkURL.make(uri, size: 200) else { return }
             image = await ArtworkCache.shared.image(url)
         }
     }

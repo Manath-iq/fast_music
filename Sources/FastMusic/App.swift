@@ -1,6 +1,12 @@
 import AppKit
 import SwiftUI
 
+extension Notification.Name {
+    static let fastMusicFocusSearch = Notification.Name("FastMusic.focusSearch")
+    static let fastMusicPanelOpened = Notification.Name("FastMusic.panelOpened")
+    static let fastMusicPanelClosed = Notification.Name("FastMusic.panelClosed")
+}
+
 @main
 struct FastMusicApp {
     @MainActor static func main() {
@@ -19,6 +25,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let popover = NSPopover()
     private var store: MusicStore!
     private var previewWindow: NSWindow?
+    private var outsideMonitor: Any?
+    private var localMonitor: Any?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let args = ProcessInfo.processInfo.arguments
@@ -39,6 +47,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         popover.appearance = NSAppearance(named: .darkAqua)
         popover.animates = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         popover.delegate = self
+        if !demo {
+            Preferences.shared.onAction = { [weak self] action in
+                guard let self else { return }
+                switch action {
+                case .panel: self.toggle()
+                case .wave: if !self.store.signedIn { self.showPanel() }; self.store.startWave()
+                case .favorites: if !self.store.signedIn { self.showPanel() }; self.store.startFavorites()
+                }
+            }
+            Preferences.shared.start()
+            if args.contains("--enable-login") { Preferences.shared.setLogin(true) }
+        }
+        outsideMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] _ in
+            Task { @MainActor in self?.popover.performClose(nil) }
+        }
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .keyDown]) { [weak self] event in
+            guard let self, self.popover.isShown else { return event }
+            if event.type == .keyDown, event.window === self.popover.contentViewController?.view.window {
+                if event.window?.firstResponder is RecorderButton { return event }
+                if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+                   event.keyCode == 3 {
+                    NotificationCenter.default.post(name: .fastMusicFocusSearch, object: nil)
+                    return nil
+                }
+                if event.keyCode == 53 { self.popover.performClose(nil); return nil }
+            } else if event.type != .keyDown,
+                      event.window !== self.popover.contentViewController?.view.window,
+                      event.window !== self.statusItem?.button?.window {
+                self.popover.performClose(nil)
+            }
+            return event
+        }
         DistributedNotificationCenter.default().addObserver(self, selector: #selector(showPanel), name: Notification.Name("site.manath.fastmusic.show"), object: nil)
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = statusItem.button {
@@ -68,16 +108,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         popover.contentViewController?.view.window?.makeKey()
         NSApp.activate(ignoringOtherApps: true)
+        NotificationCenter.default.post(name: .fastMusicPanelOpened, object: nil)
+        // An accessory app otherwise automatically focuses its first text field.
+        popover.contentViewController?.view.window?.makeFirstResponder(nil)
     }
 
     @objc private func showPanel() { if !popover.isShown { toggle() } }
 
-    func popoverDidClose(_ notification: Notification) { store.setVisible(false) }
+    func popoverDidShow(_ notification: Notification) {
+        NotificationCenter.default.post(name: .fastMusicPanelOpened, object: nil)
+        popover.contentViewController?.view.window?.makeFirstResponder(nil)
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        store.setVisible(false)
+        NotificationCenter.default.post(name: .fastMusicPanelClosed, object: nil)
+    }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+    func applicationDidResignActive(_ notification: Notification) { popover.performClose(nil) }
+    func applicationWillTerminate(_ notification: Notification) {
+        if let outsideMonitor { NSEvent.removeMonitor(outsideMonitor) }
+        if let localMonitor { NSEvent.removeMonitor(localMonitor) }
+    }
 
     private func renderScreenshot(to path: String) {
         // NSSlider is an AppKit view: capture through NSHostingView so native controls are included.
-        let host = NSHostingView(rootView: PlayerView(store: store))
+        let host = NSHostingView(rootView: PlayerView(store: store, previewSettings: ProcessInfo.processInfo.arguments.contains("--settings-preview")))
         let size = host.fittingSize
         host.frame = NSRect(origin: .zero, size: size)
         let window = NSWindow(contentRect: host.frame, styleMask: .borderless, backing: .buffered, defer: false)
