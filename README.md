@@ -2,6 +2,10 @@
 
 Лёгкий неофициальный плеер Яндекс Музыки в строке меню macOS. Нативные SwiftUI + AppKit + AVPlayer, без Electron/WebView и без иконки в Dock.
 
+**[Скачать DMG для macOS — GitHub Releases](https://github.com/Manath-iq/fast_music/releases/latest)** · macOS 14+ · Apple Silicon и Intel.
+
+Откройте DMG и перетащите приложение в «Программы». Инструкция первого запуска есть в релизе и внутри образа.
+
 <img src="docs/preview.png" width="480" alt="Предпросмотр панели Fast Music по пользовательскому референсу; демо без воспроизведения">
 
 ## Запуск
@@ -12,6 +16,8 @@ macOS 14+, Xcode Command Line Tools / Swift 6.
 bash scripts/build.sh
 open "dist/Fast Music.app"
 ```
+
+Универсальный установочный образ из исходников: `bash scripts/package-dmg.sh`.
 
 При первом запуске откроется панель. Нажмите «Войти», откройте `https://ya.ru/device` и подтвердите показанный код. Пароль вводится только на сайте Яндекса. Для полных треков нужна подписка Плюс.
 
